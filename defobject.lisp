@@ -3,6 +3,7 @@
   (:use :common-lisp)
   (:export
    :defobject
+   :equalg
    ))
 
 (in-package :defobject)
@@ -119,3 +120,12 @@ Example:
        :superclasses ,superclasses
        :undecorated ,undecorated)
      (def-ez-class-ctor ,name ,varlist)))
+
+
+(defgeneric equalg (obj1 obj2)
+  ;; I could not find any information for an overridable equality
+  ;; predicate in AMOP information, the Hyperspec, or SBCL's pred.lisp
+  (:documentation
+   "Generic equality function for arbitrary CLOS objects.
+
+Implement a DEFMETHOD EQUALG to taste."))
