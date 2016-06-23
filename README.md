@@ -11,6 +11,7 @@ similarities.
 
 
 It kind of has a sister project - DEFCLASS*. DEFCLASS* does not
-attempt to do the mimicry.
+attempt to do the mimicry. DEFCLASS-STAR does not appear to reliably
+exist any more online.
 
 LICENSE: LLGPL

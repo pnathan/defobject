@@ -1,32 +1,35 @@
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; defobject.lisp
+;;;;
+;;;; License: LLGPL
+;;;;
+;;;; Please see usage notes in the defobject macro.
+;;;;
+;;;; Copyright Paul Nathan 2012-2016
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defpackage :defobject
   (:use :common-lisp)
   (:export
-   :defobject
-   :equalg
-   ))
+   :defobject))
 
 (in-package :defobject)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Object creation macros
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Object creation macros
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun build-var (classname var &key undecorated)
+  "Build the variable (slot) names"
   (let ((variable-symbol (if (consp var)
-			     (first var)
-			     var))
-	(variable-init-val (if (consp var)
-			       (second var)
-			       nil)))
-  (list variable-symbol
-        :initform variable-init-val
-        :accessor (if undecorated
-                      (intern (string variable-symbol))
-                      (intern (concatenate 'string (string classname) "-"
-                                           (string variable-symbol))))
-        :initarg (intern (string variable-symbol) :keyword))))
+                             (first var)
+                             var))
+        (variable-init-val (if (consp var)
+                               (second var)
+                               nil)))
+    (list variable-symbol
+          :initform variable-init-val
+          :accessor (if undecorated
+                        (intern (string variable-symbol))
+                        (intern (concatenate 'string (string classname) "-"
+                                             (string variable-symbol))))
+          :initarg (intern (string variable-symbol) :keyword))))
 
 ;; (with-running-unit-tests
 ;;     (expect
@@ -40,92 +43,115 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defmacro def-ez-class (name &optional varlist &key documentation superclasses undecorated)
+  "Defines the structure of the class"
   (let ((docpair nil)
-	(vars (loop for var in varlist
-		 collect (build-var name var :undecorated undecorated))))
+        (vars (loop for var in varlist
+                 collect (build-var name var :undecorated undecorated))))
 
     (if documentation
-	(setf docpair (list :documentation documentation))
-	(setf docpair (list :documentation "")))
+        (setf docpair (list :documentation documentation))
+        (setf docpair (list :documentation "")))
 
     `(if ,superclasses
-	 ,(let ((classes (cadr superclasses)))
-	   `(defclass ,name
-	       ,classes
-	     ,vars
-	     ,docpair))
-	 ;;else
-	 (defclass ,name ()
-	   ,vars
-	   ,docpair))))
+         ,(let ((classes (cadr superclasses)))
+           `(defclass ,name
+               ,classes
+             ,vars
+             ,docpair))
+         ;;else
+         (defclass ,name ()
+           ,vars
+           ,docpair))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defmacro def-ez-class-ctor (name varlist)
-  "
-;(defun make-name (&key (bar nil))
-;(make-instance 'name :bar bar))"
+  "Defines a constructor `make-<name>` with keywords for the
+different slots."
   (let ((initarg-list
-	 (loop for var in varlist collect
-	      (if (consp var)
-		  (list (first var) (second var))
-		  (list var nil))))
-	(ctor-args
-	 (alexandria:flatten
-	  (loop for var in varlist
-	     collect
-	       (let ((var-symbol (if (consp var)
-				     (first var)
-				     var)))
-		     (list (intern (string var-symbol) :keyword) var-symbol))))))
+         (loop for var in varlist collect
+              (if (consp var)
+                  (list (first var) (second var))
+                  (list var nil))))
+        (ctor-args
+         (alexandria:flatten
+          (loop for var in varlist
+             collect
+               (let ((var-symbol (if (consp var)
+                                     (first var)
+                                     var)))
+                     (list (intern (string var-symbol) :keyword) var-symbol))))))
 
     ;;Add the kwarg notator
     (if initarg-list
-	(push '&key initarg-list))
+        (push '&key initarg-list))
 
      `(defun ,(intern (concatenate 'string "MAKE-" (string name)))
-	  ,initarg-list
-	(make-instance (quote ,name)
-		       ,@ctor-args))))
+          ,initarg-list
+        (make-instance (quote ,name)
+                       ,@ctor-args))))
+
+(defmacro def-ez-equals (classname varlist)
+  `(defmethod generic-comparability:equals ((obj1 ,classname) (obj2 ,classname)
+                                            &rest keys
+                                            &key recursive
+                                            &allow-other-keys)
+     "Generated EQUALS function"
+     (declare (ignore keys))
+
+     (every #'(lambda (slot)
+                 (generic-comparability:equals
+                  (slot-value obj1 slot)
+                  (slot-value obj2 slot)
+                  :recursive recursive))
+             `,',varlist)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Note: this macro makes for a good deal less typing for your
-;; 'average' POD class structure. It's similar to DEFSTRUCT, but
-;; instead is a "normal" CLOS object.
 (defmacro defobject (name varlist
                      &key
                        (documentation nil)
-                       undecorated
+                       (undecorated t)
                        (superclasses nil))
-  "Defines a class `name`
+  "Defines a class `name`, along with helpers.
 
 `name` will have its variables with these settings:
   initform as nil (or specified)
-  accessor function as `name-var`
+  accessor function as `var`
   initarg as :var
 
-If `undecorated` is T, then the accessor function will be `var`.
+If `undecorated` is nil, then the accessor function will be `name-var`.
 
-If a var is passed in as a pair (var val), val will become the
-initform.
+If the class will have no relation to others, it is better to decorate
+the accessors.. However, if you anticipate the same accessors being
+shared and related between objects, then it is better to leave them
+undecorated.
 
-A make-`name` function definition will spring into existance
+If a slot name in the varlist is passed in as a pair (slotname value),
+value will become the initform.
 
-Example:
-;(defobject world (population-normals population-wizards population-dragons)
-  :documentation ''Fun place!'')"
+A make-`name` function definition will spring into existance, as will a
+GENERIC-COMPARABILITY:EQUALS function, conforming to CDR-8.
+
+
+Usage note: this macro makes for a good deal less typing for your
+'average' POD class structure. It's similar to DEFSTRUCT, but instead
+is a normal CLOS object suitable for normal CLOS relations. This macro
+is suitable to embark on 'normal' and 'average' adventures. Genuinely
+exciting and flexible adventures should require DEFCLASS directly.
+
+DEFCLASS-STAR is a similar project, but the source code appears to
+have gone travelling, and QUICKDOCS documentation appears to be
+nil. This is all very depressing and is cause to find some whiskey.
+
+
+Example usage:
+
+(defobject world  (population-normals population-wizards population-dragons)
+  :documentation ''Fun place!'' )"
 
   `(progn
      (def-ez-class ,name ,varlist
        :documentation ,documentation
        :superclasses ,superclasses
        :undecorated ,undecorated)
-     (def-ez-class-ctor ,name ,varlist)))
-
-
-(defgeneric equalg (obj1 obj2)
-  ;; I could not find any information for an overridable equality
-  ;; predicate in AMOP information, the Hyperspec, or SBCL's pred.lisp
-  (:documentation
-   "Generic equality function for arbitrary CLOS objects.
-
-Implement a DEFMETHOD EQUALG to taste."))
+     (def-ez-class-ctor ,name ,varlist)
+     (def-ez-equals ,name ,varlist)))
